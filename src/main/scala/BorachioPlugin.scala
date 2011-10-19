@@ -22,49 +22,53 @@ import sbt._
 import Keys._
 
 object BorachioPlugin extends Plugin {
-  
+
   lazy val GenerateMocks = config("generate-mocks") hide
-  lazy val Mock = config("mock") extend(Compile)
-  
+  lazy val Mock = config("mock") extend (Compile)
+
   lazy val generatedMockDirectory = SettingKey[File]("generated-mock-directory", "Where generated mock source code will be placed")
   lazy val generatedTestDirectory = SettingKey[File]("generated-test-directory", "Where generated test source code will be placed")
-  
+
   lazy val generateMocks = TaskKey[Unit]("generate-mocks", "Generates sources for classes with the @mock annotation")
-  def generateMocksTask = (sources in GenerateMocks, classDirectory in GenerateMocks, scalacOptions in GenerateMocks, 
-      classpathOptions, scalaInstance, fullClasspath in Compile, streams) map {
-    (srcs, out, opts, cpOpts, si, cp, s) =>
-      IO.delete(out)
-      IO.createDirectory(out)
-      val comp = new compiler.RawCompiler(si, cpOpts, s.log)
-      comp(srcs, cp.files, out, opts)
-  }
-  
+  def generateMocksTask = (sources in GenerateMocks, classDirectory in GenerateMocks, scalacOptions in GenerateMocks,
+    classpathOptions, scalaInstance, fullClasspath in Compile, streams) map {
+      (srcs, out, opts, cpOpts, si, cp, s) =>
+        IO.delete(out)
+        IO.createDirectory(out)
+        val comp = new compiler.RawCompiler(si, cpOpts, s.log)
+        comp(srcs, cp.files, out, opts)
+    }
+
   def collectSource(directory: SettingKey[File]) =
-    (directory, includeFilter in unmanagedSources, excludeFilter in unmanagedSources) map { 
+    (directory, includeFilter in unmanagedSources, excludeFilter in unmanagedSources) map {
       (d, f, e) => d.descendentsExcept(f, e).get
     }
-  
-  lazy val generateMocksSettings = 
-    inConfig(GenerateMocks)(Defaults.configSettings) ++ 
-    inConfig(Mock)(Defaults.configSettings) ++
-    Seq(
-      generatedMockDirectory <<= sourceManaged(_ / "mock" / "scala"),
-      generatedTestDirectory <<= sourceManaged(_ / "test" / "scala"),
-      scalacOptions in GenerateMocks <++= 
-        (generatedMockDirectory, generatedTestDirectory) map { (gm, gt) =>
-          Seq(
-            "-Xplugin-require:borachio",
-            "-Ylog:generatemocks",
-            "-Ystop-after:generatemocks",
-            "-P:borachio:generatemocks:"+ gm,
-            "-P:borachio:generatetest:"+ gt)
-        },
-      sources in Test <++= collectSource(generatedTestDirectory),
-      sources in Mock <++= collectSource(generatedMockDirectory),
-      sources in Mock <++= collectSource(generatedTestDirectory),
-      generateMocks <<= generateMocksTask dependsOn(compile in Compile),
-      compile in Test <<= (compile in Test) dependsOn(compile in Mock),
-      testOptions in Test <+= classDirectory in Mock map { dir =>
-        Tests.Argument(TestFrameworks.ScalaTest, "-Dmock.classes=" + dir)
-      })
+
+  lazy val generateMocksSettings =
+    inConfig(GenerateMocks)(Defaults.configSettings) ++
+      inConfig(Mock)(Defaults.configSettings) ++
+      Seq(
+        generatedMockDirectory <<= sourceManaged(_ / "mock" / "scala"),
+        generatedTestDirectory <<= sourceManaged(_ / "test" / "scala"),
+        scalacOptions in GenerateMocks <++=
+          (generatedMockDirectory, generatedTestDirectory) map { (gm, gt) =>
+            Seq(
+              "-Xplugin-require:borachio",
+              "-Ylog:generatemocks",
+              "-Ystop-after:generatemocks",
+              "-P:borachio:generatemocks:" + gm,
+              "-P:borachio:generatetest:" + gt)
+          },
+        sources in Test <++= collectSource(generatedTestDirectory),
+        sources in Mock <++= collectSource(generatedMockDirectory),
+        sources in Mock <++= collectSource(generatedTestDirectory),
+        generateMocks <<= generateMocksTask dependsOn (compile in Compile),
+        compile in Test <<= (compile in Test) dependsOn (compile in Mock),
+        testOptions in Test <+= classDirectory in Mock map { dir =>
+          Tests.Argument(TestFrameworks.ScalaTest, "-Dmock.classes=" + dir)
+          Tests.Setup(() => System.setProperty("mock.classes", dir.getPath))
+
+          //Tests.Argument with specs2 has not even been tried, I saw people in the specs2 google groups having trouble with it, so did not bother.  I used their solution instead
+          //Tests.Argument(TestFrameworks.Specs2, "-Dmock.classes=" + dir)
+        })
 }

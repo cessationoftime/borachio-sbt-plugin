@@ -9,3 +9,7 @@ target/
 *.iws
 .idea/
 .history
+.cache
+.classpath
+.project
+.target/
